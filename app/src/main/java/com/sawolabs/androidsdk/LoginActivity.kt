@@ -3,6 +3,7 @@ package com.sawolabs.androidsdk
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -22,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import com.onesignal.OSSubscriptionObserver
 import com.onesignal.OSSubscriptionStateChanges
 import com.onesignal.OneSignal
+import com.sawolabs.androidsdk.databinding.ActivityLoginBinding
 import io.sentry.Breadcrumb
 import io.sentry.Sentry
 import io.sentry.SentryLevel
@@ -38,6 +40,7 @@ import java.util.concurrent.TimeUnit
 private const val TAG = "LoginActivity"
 
 class LoginActivity : AppCompatActivity(), OSSubscriptionObserver {
+    private lateinit var binding: ActivityLoginBinding
     private lateinit var biometricPrompt: BiometricPrompt
     private lateinit var promptInfo: BiometricPrompt.PromptInfo
     private lateinit var cryptographyManager: CryptographyManager
@@ -62,7 +65,9 @@ class LoginActivity : AppCompatActivity(), OSSubscriptionObserver {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_login)
+        binding = ActivityLoginBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
 
         OneSignal.addSubscriptionObserver(this)
         registerDevice()
@@ -73,15 +78,16 @@ class LoginActivity : AppCompatActivity(), OSSubscriptionObserver {
             this, ::processCancel, ::processData
         )
         promptInfo = BiometricPromptUtils.createPromptInfo(this)
-        mWebView = findViewById(R.id.webview)
-        mProgressBar = findViewById(R.id.progressBar)
+        mWebView = binding.webview
+        mProgressBar = binding.progressBar
         keyExistInStorage = cryptographyManager.isDataExistInSharedPrefs(
             this, SHARED_PREF_FILENAME, Context.MODE_PRIVATE, SHARED_PREF_ENC_PAIR_KEY
         )
         canStoreKeyInStorage =
-            BiometricManager.from(applicationContext)
-                .canAuthenticate(BIOMETRIC_STRONG) == BiometricManager
+            BiometricManager.from(applicationContext).canAuthenticate(BIOMETRIC_STRONG) == BiometricManager
                 .BIOMETRIC_SUCCESS
+
+
 
         if (!isOnline(this)) {
             Toast.makeText(this, "Internet connection unavailable", Toast.LENGTH_LONG).show()
@@ -117,15 +123,18 @@ class LoginActivity : AppCompatActivity(), OSSubscriptionObserver {
                     ::passPayloadToCallbackActivity,
                     ::authenticateToEncrypt,
                     ::authenticateToDecrypt,
-                    sharedPref.getString(SHARED_PREF_DEVICE_ID_KEY, null).toString()
-                ),
+                    sharedPref.getString(SHARED_PREF_DEVICE_ID_KEY, null).toString(),
+
+                    ),
                 "webSDKInterface"
             )
-
             delay(2000L)
+            if (0 != applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) {
+                WebView.setWebContentsDebuggingEnabled(true)
+            }
+
             mWebView.loadUrl(sawoWebSDKURL)
         }
-
     }
 
     private fun isOnline(context: Context): Boolean {
@@ -134,24 +143,25 @@ class LoginActivity : AppCompatActivity(), OSSubscriptionObserver {
         val capabilities =
             connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
         if (capabilities != null) {
-            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
-                Log.i("Internet", "NetworkCapabilities.TRANSPORT_CELLULAR")
-                return true
-            } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                Log.i("Internet", "NetworkCapabilities.TRANSPORT_WIFI")
-                return true
-            } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
-                Log.i("Internet", "NetworkCapabilities.TRANSPORT_ETHERNET")
-                return true
+            when {
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
+                    Log.i("Internet", "NetworkCapabilities.TRANSPORT_CELLULAR")
+                    return true
+                }
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> {
+                    Log.i("Internet", "NetworkCapabilities.TRANSPORT_WIFI")
+                    return true
+                }
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> {
+                    Log.i("Internet", "NetworkCapabilities.TRANSPORT_ETHERNET")
+                    return true
+                }
             }
         }
         return false
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        mWebView.destroy()
-    }
+
 
 
     private fun processCancel() {
@@ -198,6 +208,7 @@ class LoginActivity : AppCompatActivity(), OSSubscriptionObserver {
 
     private fun processData(cryptoObject: BiometricPrompt.CryptoObject?) {
         if (readyToEncrypt) {
+
             runOnUiThread(Runnable {
                 mWebView.evaluateJavascript(
                     "(function() { window.dispatchEvent(new CustomEvent('keysFromAndroid', {'detail': \'${dataToEncrypt}\'})); })();",
@@ -295,10 +306,7 @@ class LoginActivity : AppCompatActivity(), OSSubscriptionObserver {
             call.enqueue(object : Callback<Void> {
                 override fun onResponse(call: Call<Void>, response: Response<Void>) {
                     if (response.isSuccessful) {
-                        Log.d(
-                            TAG,
-                            "RegisterDeviceApi: Successful"
-                        )
+                        Log.d(TAG, "RegisterDeviceApi: Successful $response deviceID:$deviceID deviceToken: $deviceToken")
                     } else {
                         try {
                             Log.d(
